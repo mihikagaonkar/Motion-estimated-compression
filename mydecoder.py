@@ -14,15 +14,14 @@ class VideoDecoder:
             self.width = np.frombuffer(f.read(4), dtype=np.int32)[0]
             self.height = np.frombuffer(f.read(4), dtype=np.int32)[0]
             num_frames = np.frombuffer(f.read(4), dtype=np.int32)[0]
-            
+
             print(f"Video info: {self.width}x{self.height}, {num_frames} frames")
             print(f"Quantization parameters: n1={self.n1}, n2={self.n2}")
-            
+
             self.frames = []
             for _ in range(num_frames):
                 num_blocks = np.frombuffer(f.read(4), dtype=np.int32)[0]
                 frame_data = []
-                
                 for _ in range(num_blocks):
                     pos_i = np.frombuffer(f.read(4), dtype=np.int32)[0]
                     pos_j = np.frombuffer(f.read(4), dtype=np.int32)[0]
@@ -31,7 +30,6 @@ class VideoDecoder:
                     num_coeffs = np.frombuffer(f.read(4), dtype=np.int32)[0]
                     coeffs = np.frombuffer(f.read(num_coeffs * 8), dtype=np.float64)
                     mask = np.frombuffer(f.read(64), dtype=np.bool_)
-                    
                     frame_data.append({
                         'pos': (pos_i, pos_j),
                         'channel': channel,
@@ -39,7 +37,6 @@ class VideoDecoder:
                         'coeffs': coeffs,
                         'mask': mask.reshape((8, 8))
                     })
-                
                 self.frames.append(frame_data)
 
         self.audio_path = audio_path
@@ -49,19 +46,16 @@ class VideoDecoder:
 
     def idct_block(self, block):
         return idct(idct(block.T, norm='ortho').T, norm='ortho')
-        
+
     def decompress_frame(self, frame_data):
         frame = np.zeros((self.height, self.width, 3))
-        
         for block in frame_data:
             i, j = block['pos']
             c = block['channel']
-            
             dct_block = np.zeros((8, 8))
             dct_block[block['mask']] = block['coeffs']
             pixel_block = self.idct_block(dct_block)
             frame[i:i+8, j:j+8, c] = pixel_block
-            
         return np.clip(frame, 0, 255).astype(np.uint8)
 
     def play(self):
@@ -84,19 +78,17 @@ class VideoDecoder:
         print("Right Arrow: Step forward (when paused)")
         print("Left Arrow: Step backward (when paused)")
         print("Q: Quit")
-        
+
         start_time = time.time()
         frame_times = []
 
         while True:
             frame_start = time.time()
-            
             for event in pygame.event.get():
                 if event.type == pygame.QUIT or (
                     event.type == pygame.KEYDOWN and event.key == pygame.K_q):
                     pygame.quit()
                     return
-
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_SPACE:
                         self.playing = not self.playing
@@ -108,11 +100,8 @@ class VideoDecoder:
                                 pygame.mixer.music.unpause()
                         else:
                             pygame.mixer.music.pause()
-
                     elif event.key == pygame.K_RIGHT and not self.playing:
-                        self.current_frame = min(self.current_frame + 1,
-                                              len(self.frames) - 1)
-                        
+                        self.current_frame = min(self.current_frame + 1, len(self.frames) - 1)
                     elif event.key == pygame.K_LEFT and not self.playing:
                         self.current_frame = max(self.current_frame - 1, 0)
 
@@ -122,6 +111,8 @@ class VideoDecoder:
                     pygame.mixer.music.play()
 
             frame = self.decompress_frame(self.frames[self.current_frame])
+            frame = frame[..., ::-1]
+            frame = frame.astype(np.uint8)
             surface = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
             screen.blit(surface, (0, 0))
             pygame.display.flip()
@@ -132,7 +123,6 @@ class VideoDecoder:
                 frame_times.append(frame_time)
                 sleep_time = max(0, 1.0/self.frame_rate - frame_time)
                 time.sleep(sleep_time)
-                
                 if len(frame_times) == 30:
                     avg_time = sum(frame_times) / len(frame_times)
                     print(f"Average frame processing time: {avg_time*1000:.1f}ms")
@@ -142,8 +132,22 @@ def main():
     if len(sys.argv) != 3:
         print("Usage: python mydecoder.py input_video.cmp input_audio.wav")
         sys.exit(1)
-        
+
     compressed_path = sys.argv[1]
     audio_path = sys.argv[2]
-    
-    if not
+
+    if not os.path.exists(compressed_path):
+        print(f"Error: Compressed video file {compressed_path} not found")
+        sys.exit(1)
+
+    try:
+        decoder = VideoDecoder(compressed_path, audio_path)
+        decoder.play()
+    except Exception as e:
+        print(f"Error during decoding: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
