@@ -10,12 +10,14 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 class VideoDecoder:
     def __init__(self, compressed_path, audio_path):
         with open(compressed_path, 'rb') as f:
+            # Reading the metadata from the encoded files
             self.n1 = np.frombuffer(f.read(4), dtype=np.int32)[0]
             self.n2 = np.frombuffer(f.read(4), dtype=np.int32)[0]
             self.width = np.frombuffer(f.read(4), dtype=np.int32)[0]
             self.height = np.frombuffer(f.read(4), dtype=np.int32)[0]
             self.num_frames = np.frombuffer(f.read(4), dtype=np.int32)[0]
-
+            
+            # Read all frame data at once
             self.frames = []
             for _ in range(self.num_frames):
                 num_blocks = np.frombuffer(f.read(4), dtype=np.int32)[0]
@@ -35,65 +37,84 @@ class VideoDecoder:
         self.frame_rate = 30
         self.playing = False
         self.frame_time = 1.0 / self.frame_rate
-
+        
+        # Initialize pygame for loading screen
         pygame.init()
         self.screen = pygame.display.set_mode((self.width, self.height))
         pygame.display.set_caption('Loading...')
-
+        
+        # Pre-process all frames
         self.decoded_frames = []
         self._preprocess_frames()
 
     def _decode_frame(self, frame_data):
+        # Decode a single frame efficiently
         frame = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        
+        # Group blocks by channel
         channel_blocks = [[] for _ in range(3)]
         for pos_i, pos_j, channel, coeffs, mask in frame_data:
             channel_blocks[channel].append((pos_i, pos_j, coeffs, mask))
-
+        
+        # Process each channel's blocks
         for channel, blocks in enumerate(channel_blocks):
             for pos_i, pos_j, coeffs, mask in blocks:
                 dct_block = np.zeros((8, 8), dtype=np.float32)
                 dct_block[mask] = coeffs.astype(np.float32)
+                
+                # Fast IDCT
                 pixel_block = cv2.idct(dct_block)
                 pixel_block = np.clip(pixel_block, 0, 255)
+                
+                # Place block in frame
                 h, w = min(8, self.height - pos_i), min(8, self.width - pos_j)
                 frame[pos_i:pos_i + h, pos_j:pos_j + w, channel] = pixel_block[:h, :w]
-
+        
         return frame
 
     def _preprocess_frames(self):
+        """Pre-process all frames with loading screen."""
         font = pygame.font.Font(None, 36)
-
+        
         for i, frame_data in enumerate(self.frames):
+            # Update loading screen
             progress = (i + 1) / self.num_frames * 100
             self.screen.fill((0, 0, 0))
             text = font.render(f'Loading: {progress:.1f}%', True, (255, 255, 255))
             text_rect = text.get_rect(center=(self.width/2, self.height/2))
             self.screen.blit(text, text_rect)
             pygame.display.flip()
-
+            
+            # Process frame
             frame = self._decode_frame(frame_data)
             self.decoded_frames.append(frame)
-
+            
+            # Handle events during loading
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     pygame.quit()
                     sys.exit()
 
     def _display_frame(self, frame_idx):
+        """Display a specific frame with frame counter."""
+        # Display the frame
         frame = self.decoded_frames[frame_idx]
         surface = pygame.surfarray.make_surface(frame.swapaxes(0, 1))
         self.screen.blit(surface, (0, 0))
+        
+        # Display frame counter
         font = pygame.font.Font(None, 36)
         text = font.render(f'Frame: {frame_idx + 1}/{self.num_frames}', True, (255, 255, 255))
         text_rect = text.get_rect(topleft=(10, 10))
         self.screen.blit(text, text_rect)
+        
         pygame.display.flip()
 
     def play(self):
         clock = pygame.time.Clock()
         current_frame = 0
         key_hold_time = 0
-        seek_speed = 1
+        seek_speed = 1  # Frames to skip when holding arrow keys
 
         if os.path.exists(self.audio_path):
             pygame.mixer.init(frequency=44100)
@@ -121,14 +142,17 @@ class VideoDecoder:
                     else:
                         pygame.mixer.music.pause()
 
+            # Handle keyboard input for frame control
             keys = pygame.key.get_pressed()
             if keys[pygame.K_LEFT] or keys[pygame.K_RIGHT]:
                 key_hold_time += 1
+                # Increase seek speed the longer the key is held
                 seek_speed = min(30, 1 + key_hold_time // 30)
             else:
                 key_hold_time = 0
                 seek_speed = 1
 
+            # Handle seeking (both during playback and when paused)
             if keys[pygame.K_LEFT]:
                 current_frame = max(0, current_frame - seek_speed)
                 self._display_frame(current_frame)
