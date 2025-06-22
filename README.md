@@ -30,7 +30,7 @@ This repository implements a **layer-based video encoder and decoder** that sepa
 - **Custom .cmp Format**  
   – Stores `n1 n2`, block-type bit, and 64 coefficients per color channel for each 8×8 block.  
 - **Decoder with A/V Playback**  
-  – Dequantizes using `n1`/`n2`, reconstructs frames, and plays back synchronized video + audio with play/pause/frame-step controls :contentReference[oaicite:4]{index=4}.  
+  – Dequantizes using `n1`/`n2`, reconstructs frames, and plays back synchronized video + audio with play/pause/frame-step controls.  
 
 ---
 
@@ -40,7 +40,7 @@ This repository implements a **layer-based video encoder and decoder** that sepa
    - Compute motion vectors against previous frame.  
    - Group contiguous blocks with similar vectors into foreground objects; identify remaining as background. 
 2. **8×8 DCT & Quantization**  
-   - Apply 2ⁿ uniform quantization on DCT coefficients (separate tables for foreground/background). :contentReference[oaicite:6]{index=6}  
+   - Apply 2ⁿ uniform quantization on DCT coefficients (separate tables for foreground/background).  
 3. **File I/O & Synchronization**  
    - Parse/write custom `.cmp` files.  
    - Synchronize audio (`.wav`) with decoded frames in a simple A/V player.  
